@@ -5,8 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:UnlockWord"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="MS Office" Height="300" Width="300" Background="#FF4F4F4F">
+    <Grid Drop="DroppedInWindow_Event" Background="Transparent" DragOver="NewDrop_Event" AllowDrop="True">
         
     </Grid>
 </Window>

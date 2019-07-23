@@ -1,20 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace UnlockWord
 {
@@ -26,7 +15,8 @@ namespace UnlockWord
         private enum FileType
         {
             WORD_FILE,
-            EXCEL_FILE
+            EXCEL_FILE,
+            OTHER_FILE
         }
 
 
@@ -40,6 +30,36 @@ namespace UnlockWord
             if (File.Exists(filename))
             {
                 FileInfo file = new FileInfo(filename);
+
+                if (CB_Copy.IsChecked ?? true)
+                {
+                    string c = " - Kopie";
+                    FileInfo newFile = new FileInfo(file.FullName.Insert(file.FullName.Length - file.Extension.Length, c));
+                    if (!newFile.Exists || ASK($"Datei {newFile.Name} überschreiben?", "Kopie existiert bereits."))
+                    {
+                        File.Copy(file.FullName, newFile.FullName, true);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < 1000; i++)
+                        {
+                            newFile = new FileInfo(newFile.FullName.Insert(newFile.FullName.Length - newFile.Extension.Length, $"_{i}"));
+                            if (!newFile.Exists)
+                            {
+                                File.Copy(file.FullName, newFile.FullName);
+                                continue;
+                            }
+                            if (i >= 999)
+                            {
+                                OUT($"Mehr als {i} Kopien werden nicht unterstützt.");
+                                return;
+                            }
+                        }
+                    }
+                    newFile.Attributes = FileAttributes.Normal;
+                    file = newFile;
+                }
+
                 try
                 {
                     using (FileStream stream = new FileStream(file.FullName, FileMode.Open))
@@ -52,26 +72,35 @@ namespace UnlockWord
                                 case ".docx":
                                     type = FileType.WORD_FILE;
                                     break;
+                                case ".xlsm":
                                 case ".xlsx":
                                     type = FileType.EXCEL_FILE;
                                     break;
                                 default:
-                                    OUT($"File {file.Name} with Extension {file.Extension} currently not supported.");
-                                    return;
+                                    if (ASK($"Datei {file.Name} mit Erweiterung {file.Extension} ist momentan nicht unterstützt.\nTrotzdem versuchen?", "Unbekannt"))
+                                    {
+                                        type = FileType.OTHER_FILE;
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        return;
+                                    }
                             }
                             if (DeleteWriteProtection(archive, type))
                             {
-                                OUT($"Removed Protection from {file.Name}.");
+                                OUT($"Schutz entfernt von:\n{file.Name}.");
                             }
                             else
                             {
-                                OUT($"Protection pattern not found.");
+                                OUT($"Schutz Attribut Pattern nicht gefunden.");
                             }
                         }
                     }
                 }
                 catch (Exception e)
                 {
+                    /// Catches known exception (mostly access denied error)
                     if (e is UnauthorizedAccessException ||
                         e is System.Security.SecurityException ||
                         e is IOException)
@@ -86,10 +115,16 @@ namespace UnlockWord
             }
             else
             {
-                WARN($"{filename} not found.", "Missing File");
+                WARN($"{filename} nicht gefunden.", "Fehlende Datei");
             }
         }
 
+        /// <summary>
+        /// Depending on <see cref="FileType"/> attribute, this method tries to determine and delete file protection
+        /// </summary>
+        /// <param name="archive"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
         private bool DeleteWriteProtection(ZipArchive archive, FileType type)
         {
             switch (type)
@@ -115,12 +150,58 @@ namespace UnlockWord
                             return true;
                         }
                     }
-                    break;
+                    return false;
                 case FileType.EXCEL_FILE:
+                    System.Collections.Generic.List<string> found_xlsx = new System.Collections.Generic.List<string>();
+                    foreach (ZipArchiveEntry zips in archive.Entries.Where(x => x.FullName.Contains("worksheets") || x.Name == "workbook.xml"))
+                    {
+                        string settingsData;
+                        using (StreamReader reader = new StreamReader(zips.Open()))
+                        {
+                            settingsData = reader.ReadToEnd();
+                        }
+                        if (RemoveLock(ref settingsData))
+                        {
+                            using (Stream stream = zips.Open())
+                            {
+                                stream.SetLength(settingsData.Length);
+                                using (StreamWriter writer = new StreamWriter(stream))
+                                {
+                                    writer.Write(settingsData);
+                                }
+                            }
 
-                    break;
+                            found_xlsx.Add(zips.Name);
+                        }
+                    }
+                    OUT($"Schutz entfernt von:\n{string.Join("\n", found_xlsx)}");
+                    return (found_xlsx.Count > 0);
+                default:
+                    System.Collections.Generic.List<string> found_unknown = new System.Collections.Generic.List<string>();
+                    foreach (ZipArchiveEntry zips in archive.Entries)
+                    {
+                        string settingsData;
+                        using (StreamReader reader = new StreamReader(zips.Open()))
+                        {
+                            settingsData = reader.ReadToEnd();
+                        }
+                        if (RemoveLock(ref settingsData))
+                        {
+                            using (Stream stream = zips.Open())
+                            {
+                                stream.SetLength(settingsData.Length);
+                                using (StreamWriter writer = new StreamWriter(stream))
+                                {
+                                    writer.Write(settingsData);
+                                }
+                            }
+
+                            found_unknown.Add(zips.Name);
+                        }
+                    }
+                    OUT($"Schutz entfernt von:\n{string.Join("\n", found_unknown)}");
+                    return (found_unknown.Count > 0);
             }
-            return false;
         }
 
         /// <summary>
@@ -133,9 +214,13 @@ namespace UnlockWord
             string keyWord = "Protection";
             if (settingsData.Contains(keyWord))
             {
-                Regex regex = new Regex($"<\\S*{keyWord}.*?(?>\\/>|<\\/\\S*{keyWord}.*>)");
+                Regex regex = new Regex($"<[^<]*{keyWord}.*?(?>\\/>|<\\/\\S*?{keyWord}[^>]*>)", RegexOptions.Singleline);
                 Match match = regex.Match(settingsData);
+#if DEBUG
+                if (match.Success && ASK(match.Value, "Match"))
+#else
                 if (match.Success)
+#endif
                 {
                     settingsData = settingsData.Replace(match.Value, "");
                     return true;
@@ -146,9 +231,12 @@ namespace UnlockWord
 
         private void DroppedInWindow_Event(object sender, DragEventArgs e)
         {
-            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            foreach (string file in files)
-                CheckFile(file);
+            if (BT_Remove.IsChecked ?? false)
+            {
+                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                foreach (string file in files)
+                    CheckFile(file);
+            }
         }
 
         private void NewDrop_Event(object sender, DragEventArgs e)
@@ -175,6 +263,11 @@ namespace UnlockWord
                 titel,
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+        }
+
+        private bool ASK(string text, string title)
+        {
+            return MessageBox.Show(text, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
         }
     }
 }

@@ -1,12 +1,26 @@
-﻿<Window x:Class="UnlockWord.MainWindow"
+﻿<Window x:Name="window" x:Class="UnlockWord.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:UnlockWord"
         mc:Ignorable="d"
-        Title="MS Office" Height="300" Width="300" Background="#FF4F4F4F">
-    <Grid Drop="DroppedInWindow_Event" Background="Transparent" DragOver="NewDrop_Event" AllowDrop="True">
-        
+        Title="MS Office" Height="300" Width="300" Background="#FF4F4F4F" Foreground="#FFD1D1D1">
+    <Grid Drop="DroppedInWindow_Event" Background="Transparent" DragOver="NewDrop_Event" AllowDrop="True" Margin="4">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="20"/>
+            <RowDefinition/>
+            <RowDefinition Height="20"/>
+        </Grid.RowDefinitions>
+        <Grid Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/>
+                <ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <RadioButton x:Name="BT_Remove" Content="Schutz entfernen" Foreground="{Binding Foreground, ElementName=window}" IsChecked="True" GroupName="Func"/>
+            <RadioButton x:Name="BT_Nothing" Content="Keine Funktion" Foreground="{Binding Foreground, ElementName=window}" Grid.Column="1" GroupName="Func"/>
+        </Grid>
+        <TextBlock Text="Datei hier ablegen..." Grid.Row="1" Margin="20"/>
+        <CheckBox x:Name="CB_Copy" Content="Datei erst kopieren" IsChecked="True" Grid.Row="2" Foreground="{Binding Foreground, ElementName=window}"/>
     </Grid>
 </Window>
